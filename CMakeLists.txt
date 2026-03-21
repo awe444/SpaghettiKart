@@ -409,6 +409,51 @@ include_directories(
   ${dr_libs_SOURCE_DIR}
 )
 
+################################################################################
+# Android build-time source patches for libultraship
+# These patches are applied at configure time before add_subdirectory().
+################################################################################
+if (CMAKE_SYSTEM_NAME STREQUAL "Android")
+    # GLES 3.0 only guarantees GL_RGBA/GL_UNSIGNED_BYTE for glReadPixels.
+    # The upstream ReadFramebufferToCPU uses GL_UNSIGNED_SHORT_5_5_5_1 which
+    # silently returns zeros on GLES, causing jumbotron screens to be black.
+    # Read as RGBA8888 and convert to RGBA5551 in software.
+    set(_GFX_OGL_FILE "${CMAKE_SOURCE_DIR}/libultraship/src/graphic/Fast3D/backends/gfx_opengl.cpp")
+    if (NOT EXISTS "${_GFX_OGL_FILE}")
+        message(FATAL_ERROR "Cannot apply GLES patch: ${_GFX_OGL_FILE} not found. "
+            "Ensure the libultraship submodule is initialized (git submodule update --init).")
+    endif()
+    file(READ "${_GFX_OGL_FILE}" _GFX_OGL_CONTENT)
+    string(FIND "${_GFX_OGL_CONTENT}" "USE_OPENGLES // GLES ReadFramebufferToCPU fix" _GLES_PATCHED)
+    if (_GLES_PATCHED EQUAL -1)
+        string(REPLACE
+            "glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_SHORT_5_5_5_1, (void*)rgba16_buf);"
+            [[
+#ifdef USE_OPENGLES // GLES ReadFramebufferToCPU fix
+    {
+        uint32_t num_pixels = width * height;
+        std::vector<uint8_t> rgba8_buf(num_pixels * 4);
+        glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, rgba8_buf.data());
+        for (uint32_t i = 0; i < num_pixels; i++) {
+            uint8_t r = rgba8_buf[i * 4 + 0];
+            uint8_t g = rgba8_buf[i * 4 + 1];
+            uint8_t b = rgba8_buf[i * 4 + 2];
+            uint8_t a = rgba8_buf[i * 4 + 3];
+            rgba16_buf[i] = ((r >> 3) << 11) | ((g >> 3) << 6) | ((b >> 3) << 1) | (a >> 7);
+        }
+    }
+#else
+    glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_SHORT_5_5_5_1, (void*)rgba16_buf);
+#endif]]
+            _GFX_OGL_CONTENT "${_GFX_OGL_CONTENT}"
+        )
+        file(WRITE "${_GFX_OGL_FILE}" "${_GFX_OGL_CONTENT}")
+        message(STATUS "Applied GLES ReadFramebufferToCPU patch to libultraship")
+    else()
+        message(STATUS "GLES ReadFramebufferToCPU patch already applied")
+    endif()
+endif()
+
 add_subdirectory(libultraship ${CMAKE_CURRENT_SOURCE_DIR}/libultraship)
 add_dependencies(${PROJECT_NAME} libultraship)
 target_link_libraries(${PROJECT_NAME} PRIVATE libultraship)
