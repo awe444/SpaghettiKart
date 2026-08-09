@@ -33,6 +33,14 @@ val stageTorchAssets = tasks.register<Sync>("stageTorchAssets") {
 // over the source sets, and that failed on the missing dependency.
 val stagedTorchAssets: Provider<File> = stageTorchAssets.map { it.destinationDir }
 
+// AGP does not always infer that merge*Assets must run stageTorchAssets when the
+// assets directory comes from a Provider, so wire it explicitly.
+tasks.configureEach {
+    if (name.startsWith("merge") && name.endsWith("Assets")) {
+        dependsOn(stageTorchAssets)
+    }
+}
+
 android {
     namespace = "com.izzy.kart"
     compileSdk = 36
@@ -102,7 +110,7 @@ android {
     externalNativeBuild {
         cmake {
             path = File(repositoryRoot, "CMakeLists.txt")
-            version = "3.30.3"
+            version = "3.31.5"
         }
     }
 
