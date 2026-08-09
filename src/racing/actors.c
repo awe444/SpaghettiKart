@@ -647,10 +647,9 @@ void render_palm_trees(Camera* camera, Mat4 arg1) {
     UNUSED s32 pad;
     Vec3f spD4;
     f32 var_f22;
-    Mat4 sp90;
+    Mat4 treeMtx;
     Vec3s sp88 = { 0, 0, 0 };
     s32 test;
-    size_t i = 0;
 
     if (gGamestate == CREDITS_SEQUENCE) {
         var_f22 = 9000000.0f;
@@ -685,49 +684,47 @@ void render_palm_trees(Camera* camera, Mat4 arg1) {
             var_s1++;
             continue;
         }
-        FrameInterpolation_RecordOpenChild("render_palm_tree", TAG_ITEM_ADDR((i << 4) | (camera - cameras)));
+
+        // Key by spawn entry, not draw order — culling must not retag the same tree between frames.
+        FrameInterpolation_RecordOpenChild("render_palm_tree",
+                                          TAG_ITEM_ADDR(((uintptr_t) var_s1 << 4) | (camera - cameras)));
 
         test &= 0xF;
         test = (s16) test;
         if (test == 6) {
-            mtxf_pos_rotation_xyz(sp90, spD4, sp88);
-            if (!(gMatrixObjectCount < MTX_OBJECT_POOL_SIZE)) {
-                FrameInterpolation_RecordCloseChild();
-                break;
-            }
-            render_set_position(sp90, 0);
-            goto dummylabel;
+            mtxf_pos_rotation_xyz(treeMtx, spD4, sp88);
         } else {
-            arg1[3][0] = spD4[0];
-            arg1[3][1] = spD4[1];
-            arg1[3][2] = spD4[2];
-            if (gMatrixObjectCount < MTX_OBJECT_POOL_SIZE) {
-                render_set_position(arg1, 0);
-            dummylabel:
-                gSPClearGeometryMode(gDisplayListHead++, G_LIGHTING);
-                switch (test) {
-                    case 0:
-                        gSPDisplayList(gDisplayListHead++, d_course_dks_jungle_parkway_dl_tree1);
-                        break;
-                    case 4:
-                        gSPDisplayList(gDisplayListHead++, d_course_dks_jungle_parkway_dl_tree2);
-                        break;
-                    case 5:
-                        gSPDisplayList(gDisplayListHead++, d_course_dks_jungle_parkway_dl_tree3);
-                        break;
-                    case 6:
-                        gSPDisplayList(gDisplayListHead++, d_course_dks_jungle_parkway_dl_palm_tree);
-                        break;
-                }
-            } else {
-                FrameInterpolation_RecordCloseChild();
-                break;
-            }
-            var_s1++;
+            // Copy the yaw billboard matrix; mutating arg1 in place breaks 60fps interpolation.
+            mtxf_copy(arg1, treeMtx);
+            treeMtx[3][0] = spD4[0];
+            treeMtx[3][1] = spD4[1];
+            treeMtx[3][2] = spD4[2];
         }
-        // @port Pop the transform id.
+
+        if (gMatrixObjectCount >= MTX_OBJECT_POOL_SIZE) {
+            FrameInterpolation_RecordCloseChild();
+            break;
+        }
+
+        render_set_position(treeMtx, 0);
+        gSPClearGeometryMode(gDisplayListHead++, G_LIGHTING);
+        switch (test) {
+            case 0:
+                gSPDisplayList(gDisplayListHead++, d_course_dks_jungle_parkway_dl_tree1);
+                break;
+            case 4:
+                gSPDisplayList(gDisplayListHead++, d_course_dks_jungle_parkway_dl_tree2);
+                break;
+            case 5:
+                gSPDisplayList(gDisplayListHead++, d_course_dks_jungle_parkway_dl_tree3);
+                break;
+            case 6:
+                gSPDisplayList(gDisplayListHead++, d_course_dks_jungle_parkway_dl_palm_tree);
+                break;
+        }
+
         FrameInterpolation_RecordCloseChild();
-        i++;
+        var_s1++;
     }
 }
 
